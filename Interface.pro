@@ -27,6 +27,7 @@ CONFIG   += console
 CONFIG   -= app_bundle
 
 SOURCES += \
+        draw.cpp \
         main.cpp \
         mainwindow.cpp
 

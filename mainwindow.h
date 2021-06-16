@@ -34,7 +34,9 @@ private slots:
 
     void on_btnRemove_clicked();
 
-    void on_tabWidget_currentChanged(int index);
+    void on_tabWidget_currentChanged();
+
+    void on_btnClearHistory_clicked();
 
 private:
     Ui::MainWindow *ui;
