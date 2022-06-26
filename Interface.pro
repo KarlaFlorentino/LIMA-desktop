@@ -8,7 +8,7 @@ QT       += core gui sql
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-TARGET = ProjetoLuiz
+TARGET = LIMA
 TEMPLATE = app
 
 # The following define makes your compiler emit warnings if you use
@@ -27,7 +27,6 @@ CONFIG   += console
 CONFIG   -= app_bundle
 
 SOURCES += \
-        draw.cpp \
         main.cpp \
         mainwindow.cpp
 

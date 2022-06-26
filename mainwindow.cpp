@@ -28,7 +28,7 @@ Mat thresh,image;
 String imagePath;
 
 float realAreaSquare;
-bool area,sumareas,wid,len,widlen,avedev,per;
+bool checkBoxArea,checkBoxSumAreas,checkBoxWid,checkBoxLen,checkBoxWidLen,checkBoxAveDev,checkBoxPerimeter;
 
 vector<vector<Point> > square;
 vector<vector<Point> > leaves;
@@ -37,7 +37,7 @@ vector<double> leavesPer;
 vector<double> leavesArea;
 
 QString result = "",auxExport = "",auxExport2 = "";
-QString remover,spec,treat,rep;
+QString removeLeaf,species,treatment,replicate;
 
 static QSqlDatabase database;
 
@@ -47,20 +47,20 @@ MainWindow::MainWindow(QWidget *parent) :
         ui->setupUi(this);
 
         QString dir = qApp->applicationDirPath();
-        QString dirbanco = dir+"/bd/bd.db";
+        QString dirdatabase = dir+"/database/database.db";
 
         QString dirdriver = dir+"/sqldrivers/";
         QCoreApplication::addLibraryPath(dirdriver);
 
         database = QSqlDatabase::addDatabase("QSQLITE");
-        database.setDatabaseName(dirbanco);
+        database.setDatabaseName(dirdatabase);
         if(!database.open()){
-            ui->exibirHist->setText("Unable to connect to bank.");
-            ui->scrollHist->setWidget(ui->exibirHist);
+            ui->displayHist->setText("Unable to connect to bank.");
+            ui->scrollHist->setWidget(ui->displayHist);
             ui->scrollHist->setAlignment(Qt::AlignHCenter);
         }
 
-        //Visivel só depois que calcular as dimensoes
+        //Visible only after calculate the dimensions
         ui->labelResult->setVisible(0);
         ui->scrollResult->setVisible(0);
         ui->btnExport->setVisible(0);
@@ -69,21 +69,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow(){
     delete ui;
-}
-
-void MainWindow::on_btnImagem_clicked(){
-    QFileDialog dialog(this);
-    dialog.setNameFilter(tr("Images(*.png *.jpeg *.jpg)"));
-    dialog.setViewMode(QFileDialog::Detail);
-    QString fileName = QFileDialog::getOpenFileName(this,tr("Open Imagens"), "",tr("Image Files (*.png *.jpeg *.jpg"));
-
-    if(!fileName.isEmpty()){
-        ui->endImagem->setText(fileName);
-        imagePath = ui->endImagem->text().toStdString();
-        image = imread(imagePath, IMREAD_COLOR );
-        QImage imageaux= QImage((uchar*) image.data, image.cols, image.rows, image.step, QImage::Format_RGB888);
-        ui->exibirImagem->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
-    }
 }
 
 Point2f GetPointAfterRotate(Point2f inputpoint,Point2f center,double angle){
@@ -155,6 +140,20 @@ void pca(vector<vector<Point> >& contours, int i){
      }
 }
 
+/*static void draw( Mat& image, const vector<vector<Point> >& contornos){
+    for( size_t i = 0; i < contornos.size(); i++ ){
+        const Point* p = &contornos[i][0];
+        int n = (int)contornos[i].size();
+        polylines(image, &p, &n, 1, true, Scalar(0,0, 255), 20, LINE_AA);
+    }
+
+    namedWindow("Window 3", WINDOW_NORMAL);
+
+    imshow("Window 3",image);
+
+    imwrite("contours.jpg", image);
+}*/
+
 static void findObjects(){
     Mat gray;
     vector<vector<Point> > contours;
@@ -163,6 +162,10 @@ static void findObjects(){
     cvtColor( image, gray, COLOR_BGR2GRAY );
     threshold( gray, thresh, 60, 255, THRESH_BINARY_INV|THRESH_OTSU);
     findContours(thresh, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+
+    //imwrite("threshold.jpg", thresh);
+
+    //draw(image, contours);
 
     for(size_t i = 0; i < contours.size(); i++){
         double auxper = arcLength(contours[i], true);
@@ -181,9 +184,9 @@ static void findObjects(){
                  square.push_back(contours[i]);
              }
              else{
-                 leaves.push_back(contours[i]); //Usado para desenhar os contornos originais
+                 leaves.push_back(contours[i]); //to drawing contours
                  pca(contours,i);
-                 leavesPCA.push_back(contours[i]); //Usado nos cálculos
+                 leavesPCA.push_back(contours[i]); //to calculate
                  leavesPer.push_back(auxper);
                  leavesArea.push_back(auxarea);
              }
@@ -202,47 +205,46 @@ static void surfaceCalc(){
     auxExport.clear();
     auxExport2.clear();
 
-    //---------------------Variaveis auxiliares calculos-----------------------
-    float widSquare=0, lenSquare=0, sum=0.0;
-    float aveWidth=0.0, aveLength=0.0, aveArea=0.0, avePerimeter=0.0; //average
+    //-----------------------Auxiliary variables (calculations)------------------------------------
+    float pixelsWidSquare=0, pixelsLenSquare=0, sum=0.0;
+    float aveWidth=0.0, avgLength=0.0, aveArea=0.0, avePerimeter=0.0; //average
     float stdWidth=0.0, stdLength=0.0, stdArea=0.0, stdPerimeter=0.0; //standard deviation
-    int size = leaves.size(); //tamanho vetores e quantidade de folhas..
+    int size = leaves.size();
     float Width[size], Length[size], Area[size], Perimeter[size], WidLen[size];
     float pixelsAreaSquare=0.0, realPerSquare=0.0, pixelsPerSquare=0.0;
 
-    //---------------------Variaveis auxiliares banco-----------------------
+    //-----------------------Auxiliary variables (database)----------------------------------------
     QSqlQuery query;
-    QString nome = QString::fromStdString(imagePath);
-    nome = nome.split("/")[nome.split("/").size()-1];
+    QString name = QString::fromStdString(imagePath);
+    name = name.split("/")[name.split("/").size()-1];
     char dateStr [9]; _strdate(dateStr); char timeStr [9]; _strtime(timeStr);
-    QString id_Imagem = dateStr; id_Imagem+=" "; id_Imagem+= timeStr;
+    QString id_Image = dateStr; id_Image+=" "; id_Image+= timeStr;
 
-
-    //-------------------SQUARE----------------------
-
-    //Calculo dimensoes quadrado
+    //-------------------------------------------SQUARE--------------------------------------------
      pixelsPerSquare = arcLength(square[0],true);
 
-    if(wid || len){
-        widSquare = ( pixelsPerSquare)/4;
-        lenSquare = widSquare;
+    if(checkBoxWid || checkBoxLen){
+        pixelsWidSquare = ( pixelsPerSquare)/4;
+        pixelsLenSquare = pixelsWidSquare;
     }
 
-    if(area) pixelsAreaSquare = contourArea(square[0]);
+    if(checkBoxArea) pixelsAreaSquare = contourArea(square[0]);
 
-    if(per) realPerSquare = sqrt(float(realAreaSquare))* 4;
+    if(checkBoxPerimeter) realPerSquare = sqrt(float(realAreaSquare))* 4;
 
-    //Desenhar quadrado
+    //Draw square
     const Point* p = &square[0][0];
     int n = (int)square[0].size();
     polylines(image, &p, &n, 1, true, Scalar(0,255,0), 10, LINE_AA);
 
-    //-------------Calculo das dimensoes----------------
+    //-------------------------------------------LEAVES--------------------------------------------
     vector<Rect> boundRect(size);
+
+    float realSideSquare = sqrt(float(realAreaSquare));
 
     for(int i = 0; i < size; i++ ){
 
-        //Desenhar e numerar folhas
+        //Draw and number leaves
         const Point* p = &leaves[i][0];
         int n = (int)leaves[i].size();
         polylines(image, &p, &n, 1, true, Scalar(0,0,255), 10, LINE_AA);
@@ -251,77 +253,74 @@ static void surfaceCalc(){
         result.append("\nLeaf: "); result.append(QString::number(i+1));
         result.append("\n\n");
 
-        //_____________Calculo Largura e Comprimento_____________
-        if(wid || len){
+        //-----------------------------------------Width and Length----------------------------------------
+        if(checkBoxWid || checkBoxLen){
             boundRect[i] = boundingRect(leavesPCA[i]);
-
-            float realSideSquare = sqrt(float(realAreaSquare));
 
             //float aux = sqrt((pow((boundRect[i].tl().x - boundRect[i].tl().x),2)+pow((boundRect[i].br().y - boundRect[i].tl().y),2)));
             float aux = boundRect[i].width;
-            aux = (aux * realSideSquare)/widSquare;
+            aux = (aux * realSideSquare)/pixelsWidSquare;
 
             //float aux2 = sqrt((pow((boundRect[i].tl().x  - boundRect[i].br().x),2)+pow((boundRect[i].tl().y - boundRect[i].tl().y),2)));
             float aux2 = boundRect[i].height;
-            aux2 = (aux2 * realSideSquare)/lenSquare;
+            aux2 = (aux2 * realSideSquare)/pixelsLenSquare;
 
             if(aux2 > aux){
-                 if(avedev && wid) aveWidth += aux;
-                 if(avedev && len) aveLength += aux2;
-                 if(wid){
+                 if(checkBoxAveDev && checkBoxWid) aveWidth += aux;
+                 if(checkBoxAveDev && checkBoxLen) avgLength += aux2;
+                 if(checkBoxWid){
                      result.append("\nWidth: "); result.append(QString::number(aux));
                      Width[i] = aux;
                  }
-                 if(len){
+                 if(checkBoxLen){
                      result.append("\nLength: "); result.append(QString::number(aux2));
                      Length[i] = aux2;
                  }
 
-                 if(widlen){
+                 if(checkBoxWidLen){
                      result.append("\nWidth/Length: "); result.append(QString::number(aux/aux2));
                      WidLen[i] = aux/aux2;
                  }
 
             }else{
-                 if(avedev && wid) aveWidth += aux2;
-                 if(avedev && len) aveLength += aux;
-                 if(wid){
+                 if(checkBoxAveDev && checkBoxWid) aveWidth += aux2;
+                 if(checkBoxAveDev && checkBoxLen) avgLength += aux;
+                 if(checkBoxWid){
                      result.append("\nWidth: "); result.append(QString::number(aux2));
                       Width[i] = aux2;
                  }
-                 if(len){
+                 if(checkBoxLen){
                      result.append("\nLength: "); result.append(QString::number(aux));
                      Length[i] = aux;
                  }
-                 if(widlen){
+                 if(checkBoxWidLen){
                      result.append("\nWidth/Length: "); result.append(QString::number(aux2/aux));
                      WidLen[i] = aux2/aux;
                  }
              }
         }
 
-
-        //_____________Calculo Area_____________
-        if(area){
+        //-----------------------------------------------Area----------------------------------------------
+        if(checkBoxArea){
             float auxArea = ((leavesArea[i] * realAreaSquare)/pixelsAreaSquare);
-            if(sumareas) sum += auxArea;
+            if(checkBoxSumAreas) sum += auxArea;
             result.append("\nArea: "); result.append(QString::number(auxArea));
-            if(avedev && area) aveArea += auxArea;
+            if(checkBoxAveDev && checkBoxArea) aveArea += auxArea;
             Area[i] = auxArea;
         }
 
-        //_____________Calculo Perimetro_____________
-        if(per){
+        //--------------------------------------------Perimeter--------------------------------------------
+        if(checkBoxPerimeter){
             float auxPer = ((leavesPer[i] * realPerSquare)/pixelsPerSquare);
             result.append("\nPerimeter: "); result.append(QString::number(auxPer));
-            if(avedev && per) avePerimeter += auxPer;
+            if(checkBoxAveDev && checkBoxPerimeter) avePerimeter += auxPer;
             Perimeter[i] = auxPer;
         }
 
         result.append("\n\n");
 
-        //_____________Export_____________
-        if(wid && len && widlen && area && per){
+        //----------------------------------------------Export---------------------------------------------
+        if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxArea && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
@@ -329,140 +328,139 @@ static void surfaceCalc(){
             auxExport2.append(QString::number(Area[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(wid && len && area && per){
+        else if(checkBoxWid && checkBoxLen && checkBoxArea && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(wid && len && widlen && area){
+        else if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxArea){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(WidLen[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append("\n");
         }
-        else if(wid && len && widlen && per){
+        else if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(WidLen[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(wid && len && widlen){
+        else if(checkBoxWid && checkBoxLen && checkBoxWidLen){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(WidLen[i])); auxExport2.append("\n");
         }
-        else if(wid && len && area){
+        else if(checkBoxWid && checkBoxLen && checkBoxArea){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append("\n");
         }
-        else if(wid && len && per){
+        else if(checkBoxWid && checkBoxLen && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(wid && area && per){
+        else if(checkBoxWid && checkBoxArea && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(wid && len){
+        else if(checkBoxWid && checkBoxLen){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append("\n");
         }
-        else if(wid && area){
+        else if(checkBoxWid && checkBoxArea){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append("\n");
         }
-        else if(wid && per){
+        else if(checkBoxWid && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(len && area && per){
+        else if(checkBoxLen && checkBoxArea && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(len && area){
+        else if(checkBoxLen && checkBoxArea){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append("\n");
         }
-        else if(len && per){
+        else if(checkBoxLen && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(len){
+        else if(checkBoxLen){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Length[i])); auxExport2.append("\n");
         }
-        else if(wid){
+        else if(checkBoxWid){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Width[i])); auxExport2.append("\n");
         }
-        else if(area && per){
+        else if(checkBoxArea && checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
-        else if(area){
+        else if(checkBoxArea){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Area[i])); auxExport2.append("\n");
         }
-        else if(per){
+        else if(checkBoxPerimeter){
             auxExport2.append(QString::number(i+1));  auxExport2.append(",");
             auxExport2.append(QString::number(Perimeter[i])); auxExport2.append("\n");
         }
     } 
 
 
-    //_____________Result sum areas_____________
-    if(sumareas){
+    //--------------------------------------------Result sum areas--------------------------------------------
+    if(checkBoxSumAreas){
         result.append("\nSum areas: "); result.append(QString::number(sum));
         result.append("\n\n");
     }
 
-    //_____________Calculo Media e Desvio_____________
-    if(avedev){
-        //_____________Media_____________
-        if(avedev && wid){
+    //-------------------------------------Average and standard deviation-------------------------------------
+    if(checkBoxAveDev){
+        //Average
+        if(checkBoxAveDev && checkBoxWid){
             aveWidth = aveWidth / size;
             result.append("\nAverage width: "); result.append(QString::number(aveWidth));
         }
 
-        if(avedev && len){
-            aveLength = aveLength / size;
-            result.append("\nAverage lenght: "); result.append(QString::number(aveLength));
+        if(checkBoxAveDev && checkBoxLen){
+            avgLength = avgLength / size;
+            result.append("\nAverage length: "); result.append(QString::number(avgLength));
         }
 
-        if(avedev && area){
+        if(checkBoxAveDev && checkBoxArea){
             aveArea = aveArea / size;
             result.append("\nAverage area: "); result.append(QString::number(aveArea));
         }
 
-        if(avedev && per){
+        if(checkBoxAveDev && checkBoxPerimeter){
             avePerimeter = avePerimeter / size;
             result.append("\nAverage perimeter: "); result.append(QString::number(avePerimeter));
         }
 
          result.append("\n\n");
 
-        //_____________Desvio_____________
-
-        if(avedev && wid){
+        //Standard deviation
+        if(checkBoxAveDev && checkBoxWid){
             for(int i = 0; i < size; i++ ){
                 stdWidth += pow(Width[i]-aveWidth,2);
             }
@@ -470,15 +468,15 @@ static void surfaceCalc(){
             result.append("\nWidth deviation: "); result.append(QString::number(stdWidth));
         }
 
-        if(avedev && len){
+        if(checkBoxAveDev && checkBoxLen){
             for(int i = 0; i < size; i++ ){
-                stdLength += pow(Length[i]-aveLength,2);
+                stdLength += pow(Length[i]-avgLength,2);
             }
             stdLength = sqrt(stdLength / size);
-            result.append("\nLenght deviation: "); result.append(QString::number(stdLength));
+            result.append("\nlength deviation: "); result.append(QString::number(stdLength));
         }
 
-        if(avedev && area){
+        if(checkBoxAveDev && checkBoxArea){
             for(int i = 0; i < size; i++ ){
                 stdArea += pow(Area[i]-aveArea,2);
             }
@@ -486,7 +484,7 @@ static void surfaceCalc(){
             result.append("\nArea deviation: "); result.append(QString::number(stdArea));
         }
 
-        if(avedev && per){
+        if(checkBoxAveDev && checkBoxPerimeter){
             for(int i = 0; i < size; i++ ){
                 stdPerimeter += pow(Perimeter[i]-avePerimeter,2);
             }
@@ -497,66 +495,64 @@ static void surfaceCalc(){
          result.append("\n\n");
      }
 
-    //_____________Inserindo Media e Desvio no banco e no export_____________
-
-
-    if(avedev && area && wid && len && sumareas && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,sumareas,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+
+    //----------------------Insert average and standard deviation in database and export----------------------
+    if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxLen && checkBoxSumAreas && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length,ave_Area,std_Area,sum_Areas,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
                       QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
 
         auxExport2.append("Sum:,,,");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && wid && len && sumareas){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,sumareas) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxLen && checkBoxSumAreas){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length,ave_Area,std_Area,sum_Areas) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
                       QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append("\n");
 
         auxExport2.append("Sum:,,,");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && wid && sumareas && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "area_Media,area_Desvio,sumareas,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxSumAreas && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Area,std_Area,sum_Areas,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
                       +","+QString::number(stdWidth)+","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
@@ -573,9 +569,9 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && wid && sumareas){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,area_Media,area_Desvio,sumareas) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxSumAreas){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,ave_Area,std_Area,sum_Areas) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
                       +","+QString::number(stdWidth)+","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+")");
         query.exec();
 
@@ -589,16 +585,16 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && len && sumareas && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,sumareas,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveLength)+","+QString::number(stdLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxLen && checkBoxSumAreas && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,"
+                      "ave_Length,std_Length,ave_Area,std_Area,sum_Areas,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
@@ -609,15 +605,15 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && len && sumareas){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,sumareas) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveLength)+","+QString::number(stdLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxLen && checkBoxSumAreas){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,"
+                      "ave_Length,std_Length,ave_Area,std_Area,sum_Areas) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+","+QString::number(sum)+")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
@@ -626,88 +622,88 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && wid && len && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxLen && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length,ave_Area,std_Area,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && area && wid && len){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxLen){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length,ave_Area,std_Area) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +","+QString::number(aveArea)+","+QString::number(stdArea)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append("\n");
     }
-    else if(avedev && wid && len && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)+","
+    else if(checkBoxAveDev && checkBoxWid && checkBoxLen && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
-        if(widlen) auxExport2.append(",");
+        if(checkBoxWidLen) auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && wid && len){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "comp_Medio,comp_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
-                      +","+QString::number(stdWidth)+","+QString::number(aveLength)+","+QString::number(stdLength)+")");
+    else if(checkBoxAveDev && checkBoxWid && checkBoxLen){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Length,std_Length) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+                      +","+QString::number(stdWidth)+","+QString::number(avgLength)+","+QString::number(stdLength)+")");
         query.exec();
 
         auxExport2.append("Average:,");
         auxExport2.append(QString::number(aveWidth));auxExport2.append(",");
-        auxExport2.append(QString::number(aveLength));auxExport2.append("\n");
+        auxExport2.append(QString::number(avgLength));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdLength));auxExport2.append("\n");
     }
-    else if(avedev && area && sumareas && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,area_Media,area_Desvio,sumareas,"
-                      "per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxSumAreas && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Area,std_Area,sum_Areas,"
+                      "ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)
                       +","+QString::number(stdArea)+","+QString::number(sum)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
@@ -722,9 +718,9 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && sumareas){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,area_Media,area_Desvio,sumareas) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxSumAreas){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Area,std_Area,sum_Areas) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)
                       +","+QString::number(stdArea)+","+QString::number(sum)+")");
         query.exec();
 
@@ -736,10 +732,10 @@ static void surfaceCalc(){
 
         auxExport2.append("Sum:,"); auxExport2.append(QString::number(sum));
     }
-    else if(avedev && area && wid && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "area_Media,area_Desvio,per_Media,per_desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Area,std_Area,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
                       +","+QString::number(stdWidth)+","+QString::number(aveArea)+","+QString::number(stdArea)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
@@ -754,10 +750,10 @@ static void surfaceCalc(){
         auxExport2.append(QString::number(stdArea)); auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && area && wid){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio,"
-                      "area_Media,area_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxWid){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width,"
+                      "ave_Area,std_Area) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
                       +","+QString::number(stdWidth)+","+QString::number(aveArea)+","+QString::number(stdArea)+")");
         query.exec();
 
@@ -769,16 +765,16 @@ static void surfaceCalc(){
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append("\n");
     }
-    else if(avedev && area && len && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio,per_Media,per_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxLen && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,"
+                      "ave_Length,std_Length,ave_Area,std_Area,ave_Perimeter,std_Perimeter) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(avgLength)
                       +","+QString::number(stdLength)+","+QString::number(aveArea)+","+QString::number(stdArea)+","
                       +QString::number(avePerimeter)+","+QString::number(stdPerimeter)+")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
@@ -787,25 +783,25 @@ static void surfaceCalc(){
         auxExport2.append(QString::number(stdArea)); auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && area && len){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,"
-                      "comp_Medio,comp_Desvio,area_Media,area_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveLength)
+    else if(checkBoxAveDev && checkBoxArea && checkBoxLen){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,"
+                      "ave_Length,std_Length,ave_Area,std_Area) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(avgLength)
                       +","+QString::number(stdLength)+","+QString::number(aveArea)+","+QString::number(stdArea)+")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
         auxExport2.append(QString::number(aveArea));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
         auxExport2.append(QString::number(stdArea)); auxExport2.append("\n");
     }
-    else if(avedev && area && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,"
-                      "area_Quad,area_Media,area_Desvio,per_Media,per_Desvio) values "
-                      "('"+id_Imagem+"','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+
+    else if(checkBoxAveDev && checkBoxArea && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,"
+                      "area_Square,ave_Area,std_Area,ave_Perimeter,std_Perimeter) values "
+                      "('"+id_Image+"','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
                       QString::number(realAreaSquare)+","+QString::number(aveArea)+","+
                       QString::number(stdArea)+","+QString::number(avePerimeter)+","+QString::number(stdPerimeter)
                       +")");
@@ -819,9 +815,9 @@ static void surfaceCalc(){
         auxExport2.append(QString::number(stdArea)); auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && area){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,area_Media,area_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)+","+QString::number(stdArea)+")");
+    else if(checkBoxAveDev && checkBoxArea){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Area,std_Area) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveArea)+","+QString::number(stdArea)+")");
         query.exec();
 
         auxExport2.append("Average:,");
@@ -830,10 +826,10 @@ static void surfaceCalc(){
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdArea)); auxExport2.append("\n");
     }
-    else if(avedev && wid && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,"
-                      "area_Quad,larg_Media,larg_Desvio, per_Media,per_Desvio) values "
-                      "('"+id_Imagem+"','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+
+    else if(checkBoxAveDev && checkBoxWid && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,"
+                      "area_Square,ave_Width,std_Width, ave_Perimeter,std_Perimeter) values "
+                      "('"+id_Image+"','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
                       QString::number(realAreaSquare)+","+QString::number(aveWidth)+","+
                       QString::number(stdWidth)+","+QString::number(avePerimeter)+","+QString::number(stdPerimeter)
                       +")");
@@ -847,9 +843,9 @@ static void surfaceCalc(){
         auxExport2.append(QString::number(stdWidth));auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && wid){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,larg_Media,larg_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
+    else if(checkBoxAveDev && checkBoxWid){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Width,std_Width) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(aveWidth)
                       +","+QString::number(stdWidth)+")");
         query.exec();
 
@@ -859,50 +855,64 @@ static void surfaceCalc(){
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdWidth));auxExport2.append("\n");
     }
-    else if(avedev && len && per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,"
-                      "area_Quad,comp_Medio,comp_Desvio, per_Media,per_Desvio) values "
-                      "('"+id_Imagem+"','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+
-                      QString::number(realAreaSquare)+","+QString::number(aveLength)+","+
+    else if(checkBoxAveDev && checkBoxLen && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,"
+                      "area_Square,ave_Length,std_Length, ave_Perimeter,std_Perimeter) values "
+                      "('"+id_Image+"','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
+                      QString::number(realAreaSquare)+","+QString::number(avgLength)+","+
                       QString::number(stdLength)+","+QString::number(avePerimeter)+","+QString::number(stdPerimeter)
                       +")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append(",");
+        auxExport2.append(QString::number(avgLength));auxExport2.append(",");
         auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdLength));auxExport2.append(",");
         auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
     }
-    else if(avedev && len){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,comp_Medio,comp_Desvio) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(aveLength)+","+QString::number(stdLength)
+    else if(checkBoxAveDev && checkBoxLen){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,ave_Length,std_Length) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(avgLength)+","+QString::number(stdLength)
                       +")");
         query.exec();
 
         auxExport2.append("Average:,");
-        auxExport2.append(QString::number(aveLength));auxExport2.append("\n");
+        auxExport2.append(QString::number(avgLength));auxExport2.append("\n");
 
         auxExport2.append("Deviation:,");
         auxExport2.append(QString::number(stdLength));auxExport2.append("\n");
     }
-    else if(area && sumareas){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad,sumareas) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+","+QString::number(sum)+")");
+    else if(checkBoxAveDev && checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,"
+                      "area_Square, ave_Perimeter,std_Perimeter) values "
+                      "('"+id_Image+"','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+
+                      QString::number(realAreaSquare)+","+QString::number(avePerimeter)+","+QString::number(stdPerimeter)
+                      +")");
         query.exec();
 
-        if(area && sumareas && wid && len && widlen){
+        auxExport2.append("Average:,");
+        auxExport2.append(QString::number(avePerimeter));auxExport2.append("\n");
+
+        auxExport2.append("Deviation:,");
+        auxExport2.append(QString::number(stdPerimeter));auxExport2.append("\n");
+    }
+    else if(checkBoxArea && checkBoxSumAreas){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square,sum_Areas) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+","+QString::number(sum)+")");
+        query.exec();
+
+        if(checkBoxArea && checkBoxSumAreas && checkBoxWid && checkBoxLen && checkBoxWidLen){
             auxExport2.append("Sum:,,,,"); auxExport2.append(QString::number(sum));
         }
-        else if(area && sumareas && wid && len){
+        else if(checkBoxArea && checkBoxSumAreas && checkBoxWid && checkBoxLen){
             auxExport2.append("Sum:,,,"); auxExport2.append(QString::number(sum));
         }
-        else if(area && sumareas && wid){
+        else if(checkBoxArea && checkBoxSumAreas && checkBoxWid){
             auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
         }
-        else if(area && sumareas && len){
+        else if(checkBoxArea && checkBoxSumAreas && checkBoxLen){
             auxExport2.append("Sum:,,"); auxExport2.append(QString::number(sum));
         }
         else{
@@ -911,216 +921,216 @@ static void surfaceCalc(){
 
 
     }
-    else if(area || wid || len || per){
-        query.prepare("insert into imagem(id_Imagem,nome,especie,tratamento,repeticao,area_Quad) values ('"+id_Imagem+
-                      "','"+nome+"','"+spec+"','"+treat+"','"+rep+"',"+QString::number(realAreaSquare)+")");
+    else if(checkBoxArea || checkBoxWid || checkBoxLen || checkBoxPerimeter){
+        query.prepare("insert into image(id_Image,name,species,treatment,replicate,area_Square) values ('"+id_Image+
+                      "','"+name+"','"+species+"','"+treatment+"','"+replicate+"',"+QString::number(realAreaSquare)+")");
         query.exec();
     }
 
-    //_____________Inserindo Area,Largura,Comprimento e Perimetro no banco_____________
-
+    //--------------------------Insert Area, Width, Length and Perimeter in database--------------------------
     for(int i = 0; i < size; i++ ){
-        if(wid && len && area && widlen && per){
-                    query.prepare("insert into folha(num_Folha,id_Imagem,area,larg,comp,"
-                                  "largcomp,per) values ("+QString::number((i+1))+",'"+
-                                  id_Imagem+"',"+QString::number(Area[i])+","+
+        if(checkBoxWid && checkBoxLen && checkBoxArea && checkBoxWidLen && checkBoxPerimeter){
+                    query.prepare("insert into leaf(num_Leaf,id_Image,area,width,length,"
+                                  "widthlength,perimeter) values ("+QString::number((i+1))+",'"+
+                                  id_Image+"',"+QString::number(Area[i])+","+
                                   QString::number(Width[i])+","+QString::number(Length[i])+","+
                                   QString::number(WidLen[i])+","+QString::number(Perimeter[i])+")");
                     query.exec();
                 }
-        else if(wid && len && area && widlen){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,larg,comp,largcomp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxWid && checkBoxLen && checkBoxArea && checkBoxWidLen){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,width,length,widthlength) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Width[i])+","+QString::number(Length[i])+","+QString::number(WidLen[i])+")");
             query.exec();
         }
-        else if(wid && len && area && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,larg,comp,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxWid && checkBoxLen && checkBoxArea && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,width,length,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Width[i])+","+QString::number(Length[i])+","+
                           QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(wid && len && area){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,larg,comp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxWid && checkBoxLen && checkBoxArea){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,width,length) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Width[i])+","+QString::number(Length[i])+")");
             query.exec();
         }
-        else if(wid && area && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,larg,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxWid && checkBoxArea && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,width,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Width[i])+","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(wid && area){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,larg) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxWid && checkBoxArea){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,width) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Width[i])+")");
             query.exec();
         }
-        else if(len && area && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,comp,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxLen && checkBoxArea && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,length,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Length[i])+","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(len && area){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,comp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxLen && checkBoxArea){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,length) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Length[i])+")");
             query.exec();
         }
-        else if(area && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxArea && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(area){
-            query.prepare("insert into folha(num_Folha,id_Imagem,area) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Area[i])
+        else if(checkBoxArea){
+            query.prepare("insert into leaf(num_Leaf,id_Image,area) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Area[i])
                           +")");
             query.exec();
         }
-        else if(wid && len && widlen && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg,comp,largcomp,per)"
-                          " values ("+QString::number((i+1))+",'"+id_Imagem+"',"+
+        else if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width,length,widthlength,perimeter)"
+                          " values ("+QString::number((i+1))+",'"+id_Image+"',"+
                           QString::number(Width[i])+","+QString::number(Length[i])+","+
                           QString::number(WidLen[i])+","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(wid && len && widlen){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg,comp,largcomp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Width[i])+","
+        else if(checkBoxWid && checkBoxLen && checkBoxWidLen){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width,length,widthlength) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Width[i])+","
                           +QString::number(Length[i])+","+QString::number(WidLen[i])+")");
             query.exec();
         }
-        else if(wid && len && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg,comp,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Width[i])+","
+        else if(checkBoxWid && checkBoxLen && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width,length,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Width[i])+","
                           +QString::number(Length[i])+","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(wid && len){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg,comp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Width[i])+","
+        else if(checkBoxWid && checkBoxLen){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width,length) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Width[i])+","
                           +QString::number(Length[i])+")");
             query.exec();
         }
-        else if(wid && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+
+        else if(checkBoxWid && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+
                           QString::number( Width[i])+","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(wid){
-            query.prepare("insert into folha(num_Folha,id_Imagem,larg) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Width[i])+")");
+        else if(checkBoxWid){
+            query.prepare("insert into leaf(num_Leaf,id_Image,width) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Width[i])+")");
             query.exec();
         }
-        else if(len && per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,comp,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Length[i])
+        else if(checkBoxLen && checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,length,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Length[i])
                           +","+QString::number(Perimeter[i])+")");
             query.exec();
         }
-        else if(len){
-            query.prepare("insert into folha(num_Folha,id_Imagem,comp) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Length[i])+")");
+        else if(checkBoxLen){
+            query.prepare("insert into leaf(num_Leaf,id_Image,length) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Length[i])+")");
             query.exec();
         }
-        else if(per){
-            query.prepare("insert into folha(num_Folha,id_Imagem,per) values ("
-                          +QString::number((i+1))+",'"+id_Imagem+"',"+QString::number(Perimeter[i])+")");
+        else if(checkBoxPerimeter){
+            query.prepare("insert into leaf(num_Leaf,id_Image,perimeter) values ("
+                          +QString::number((i+1))+",'"+id_Image+"',"+QString::number(Perimeter[i])+")");
             query.exec();
         }
     }
 
-    //_____________Export_____________
-
-    auxExport.append("Image:," + nome);
-    auxExport.append("\nSpecies:," + spec);
-    auxExport.append("\nTreatment:," + treat);
-    auxExport.append("\nReplicate:," + rep);
+    //-------------------------------------------------Export-------------------------------------------------
+    auxExport.append("Image:," + name);
+    auxExport.append("\nSpecies:," + species);
+    auxExport.append("\nTreatment:," + treatment);
+    auxExport.append("\nReplicate:," + replicate);
     auxExport.append("\nScale pattern area:,"); auxExport.append(QString::number(realAreaSquare));
     auxExport.append("\nNumber of leaves:,"); auxExport.append(QString::number(size));
     auxExport.append("\n\n");
 
-    if(wid && len && widlen && area && per) auxExport.append("Number of leaf,Width,Length,Width/Length,Area,Perimeter\n\n");
-    else if(wid && len && area && per) auxExport.append("Number of leaf,Width,Length,Area,Perimeter\n\n");
-    else if(wid && len && widlen && area) auxExport.append("Number of leaf,Width,Length,Width/Length,Area\n\n");
-    else if(wid && len && widlen && per) auxExport.append("Number of leaf,Width,Length,Width/Length,Perimeter\n\n");
-    else if(wid && len && widlen) auxExport.append("Number of leaf,Width,Length,Width/Length\n\n");
-    else if(wid && len && area) auxExport.append("Number of leaf,Width,Length,Area\n\n");
-    else if(wid && len && per) auxExport.append("Number of leaf,Width,Length,Perimeter\n\n");
-    else if(wid && len) auxExport.append("Number of leaf,Width,Length\n\n");
-    else if(wid && area && per) auxExport.append("Number of leaf,Width,Area,Perimeter\n\n");
-    else if(wid && area) auxExport.append("Number of leaf,Width,Area\n\n");
-    else if(wid && per) auxExport.append("Number of leaf,Width,Perimeter\n\n");
-    else if(len && area && per) auxExport.append("Number of leaf,Length,Area,Perimeter\n\n");
-    else if(len && area) auxExport.append("Number of leaf,Length,Area\n\n");
-    else if(len && per) auxExport.append("Number of leaf,Length,Perimeter\n\n");
-    else if(len) auxExport.append("Number of leaf,Length\n\n");
-    else if(wid) auxExport.append("Number of leaf,Width\n\n");
-    else if(area && per) auxExport.append("Number of leaf,Area,Perimeter\n\n");
-    else if(area) auxExport.append("Number of leaf,Area\n\n");
-    else if(per) auxExport.append("Number of leaf,Perimeter\n\n");
+    if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxArea && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Length,Width/Length,Area,Perimeter\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxArea && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Length,Area,Perimeter\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxArea) auxExport.append("Number of leaf,Width,Length,Width/Length,Area\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxWidLen && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Length,Width/Length,Perimeter\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxWidLen) auxExport.append("Number of leaf,Width,Length,Width/Length\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxArea) auxExport.append("Number of leaf,Width,Length,Area\n\n");
+    else if(checkBoxWid && checkBoxLen && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Length,Perimeter\n\n");
+    else if(checkBoxWid && checkBoxLen) auxExport.append("Number of leaf,Width,Length\n\n");
+    else if(checkBoxWid && checkBoxArea && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Area,Perimeter\n\n");
+    else if(checkBoxWid && checkBoxArea) auxExport.append("Number of leaf,Width,Area\n\n");
+    else if(checkBoxWid && checkBoxPerimeter) auxExport.append("Number of leaf,Width,Perimeter\n\n");
+    else if(checkBoxLen && checkBoxArea && checkBoxPerimeter) auxExport.append("Number of leaf,Length,Area,Perimeter\n\n");
+    else if(checkBoxLen && checkBoxArea) auxExport.append("Number of leaf,Length,Area\n\n");
+    else if(checkBoxLen && checkBoxPerimeter) auxExport.append("Number of leaf,Length,Perimeter\n\n");
+    else if(checkBoxLen) auxExport.append("Number of leaf,Length\n\n");
+    else if(checkBoxWid) auxExport.append("Number of leaf,Width\n\n");
+    else if(checkBoxArea && checkBoxPerimeter) auxExport.append("Number of leaf,Area,Perimeter\n\n");
+    else if(checkBoxArea) auxExport.append("Number of leaf,Area\n\n");
+    else if(checkBoxPerimeter) auxExport.append("Number of leaf,Perimeter\n\n");
 }
 
 void MainWindow::on_btnCalc_clicked(){
-        if(!database.isOpen()){
-            QMessageBox::warning(this, tr("Alert"),tr("Unable to connect to bank, the test will not come to bank."));
+    if(!database.isOpen()){
+        QMessageBox::warning(this, tr("Alert"),tr("Unable to connect to bank, the test will not come to bank."));
+    }
+
+    square.clear();
+    leavesPCA.clear();
+    leaves.clear();
+    leavesPer.clear();
+    leavesArea.clear();
+    removeLeaf.clear();
+
+    //Check boxes
+    checkBoxArea = ui->checkBoxArea->isChecked();
+    checkBoxSumAreas = ui->checkBoxSumAreas->isChecked();
+    checkBoxWid = ui->checkBoxWid->isChecked();
+    checkBoxLen = ui->checkBoxLen->isChecked();
+    checkBoxWidLen = ui->checkBoxWidLen->isChecked();
+    checkBoxAveDev = ui->checkBoxAveDev->isChecked();
+    checkBoxPerimeter = ui->checkBoxPerimeter->isChecked();
+
+    if(checkBoxWid || checkBoxLen  || checkBoxArea || checkBoxPerimeter){
+        if(checkBoxWidLen && !(checkBoxWid && checkBoxLen)){
+            QMessageBox::warning(this, tr("Alert"),tr("To calculate 'Width/Length' select the 'Width' and 'Length' options as well."));
         }
-
-        square.clear();
-        leavesPCA.clear();
-        leaves.clear();
-        leavesPer.clear();
-        leavesArea.clear();
-        remover.clear();
-        area = ui->checkBoxArea->isChecked();
-        sumareas = ui->checkBoxSumAreas->isChecked();
-        wid = ui->checkBoxWid->isChecked();
-        len = ui->checkBoxLen->isChecked();
-        widlen = ui->checkBoxWidLen->isChecked();
-        avedev = ui->checkBoxAveDev->isChecked();
-        per = ui->checkBoxPerimeter->isChecked();
-
-        if(wid || len  || area || per){
-            if(widlen && !(wid && len)){
-                    QMessageBox::warning(this, tr("Alert"),tr("To calculate Width/Length select the Width and Length options as well."));
-            }
-            else if(sumareas && !area){
-                    QMessageBox::warning(this, tr("Alert"),tr("To calculate Sum areas select the Area option as well."));
-            }
-            else if(ui->endImagem->text().toStdString() == "The image path will come here"){
-                QMessageBox::warning(this, tr("Alert"),tr("Select an image."));
-            }
-            else{
-                realAreaSquare = ui->areaQuadrado->text().toFloat();
-                spec = ui->esp->text();
-                treat = ui->trat->text();
-                rep = ui->rep->text();
-
-                image = imread(imagePath, IMREAD_COLOR );
-
-                findObjects();
-                surfaceCalc();
-
-                QImage imageaux= QImage((uchar*) image.data, image.cols, image.rows, image.step, QImage::Format_RGB888);
-                ui->exibirImagem->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
-                ui->labelResult->setVisible(1);
-                ui->scrollResult->setVisible(1);
-                ui->btnExport->setVisible(1);
-                ui->btnRemove->setVisible(1);
-                ui->exibirResult->setText(result);
-                ui->scrollResult->setWidget(ui->exibirResult);
-            }
+        else if(checkBoxSumAreas && !checkBoxArea){
+            QMessageBox::warning(this, tr("Alert"),tr("To calculate 'Sum areas' select the 'Area' option as well."));
+        }
+        else if(ui->pathImage->text().toStdString() == "The image path will come here"){
+            QMessageBox::warning(this, tr("Alert"),tr("Select an image."));
         }
         else{
-             QMessageBox::warning(this, tr("Alert"),tr("Check an option: Area, Width, Lenght or Perimeter."));
+            realAreaSquare = ui->areaSquare->text().toFloat();
+            species = ui->species->text();
+            treatment = ui->treatment->text();
+            replicate = ui->replicate->text();
+
+            image = imread(imagePath, IMREAD_COLOR );
+
+            findObjects();
+            surfaceCalc();
+
+            QImage imageaux= QImage((uchar*) image.data, image.cols, image.rows, image.step, QImage::Format_RGB888);
+            ui->displayImage->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
+            ui->labelResult->setVisible(1);
+            ui->scrollResult->setVisible(1);
+            ui->btnExport->setVisible(1);
+            ui->btnRemove->setVisible(1);
+            ui->displayResult->setText(result);
+            ui->scrollResult->setWidget(ui->displayResult);
         }
+    }
+    else{
+         QMessageBox::warning(this, tr("Alert"),tr("Check an option: 'Area', 'Width', 'length' or 'Perimeter'."));
+    }
 }
 
 void MainWindow::on_btnExport_clicked(){
@@ -1140,42 +1150,41 @@ void MainWindow::on_btnExport_clicked(){
 }
 
 void MainWindow::on_btnClean_clicked(){
-    ui->areaQuadrado->setText("1");
-    ui->endImagem->setText("The image path will come here");
-    ui->exibirImagem->setText("Select image will come here.");
+    ui->areaSquare->setText("1");
+    ui->pathImage->setText("The image path will come here");
+    ui->displayImage->setText("Select image will come here.");
     ui->labelResult->setVisible(0);
     ui->scrollResult->setVisible(0);
     ui->btnExport->setVisible(0);
     ui->btnRemove->setVisible(0);
-    ui->esp->setText("");
-    ui->trat->setText("");
-    ui->rep->setText("");
+    ui->species->setText("");
+    ui->treatment->setText("");
+    ui->replicate->setText("");
 }
 
 void MainWindow::on_btnRemove_clicked(){
     bool ok;
-    remover = QInputDialog::getText(this, tr("Remove"),tr("Enter the contour number:"),
+    removeLeaf = QInputDialog::getText(this, tr("Remove"),tr("Enter the contour number:"),
                                             QLineEdit::Normal,"1,2", &ok);
-    if (ok && remover != ""){
+    if (ok && removeLeaf != ""){
         QSqlQuery query;
-        if(query.exec("select max(id_Imagem) from imagem")){
-             while(query.next()){
-                 QString auxIdImagem = query.value(0).toString();
-                 query.prepare("delete from imagem where id_Imagem = '"+auxIdImagem+"'");
-                 query.exec();
-                 query.prepare("delete from folha where id_Imagem = '"+auxIdImagem+"'");
-                 query.exec();
-             }
+        if(query.exec("select max(id_Image) from image")){
+            while(query.next()){
+                QString auxIdimage = query.value(0).toString();
+                query.prepare("delete from image where id_Image = '"+auxIdimage+"'");
+                query.exec();
+                query.prepare("delete from leaf where id_Image = '"+auxIdimage+"'");
+                query.exec();
+            }
         }
 
-
-        for(int x = 0 ; x < remover.split(",").size(); x++){
+        for(int x = 0 ; x < removeLeaf.split(",").size(); x++){
             if(!leaves.empty()){
-                if((remover.split(",")[x].toInt() - (x+1)) > -1 && (remover.split(",")[x].toInt() - (x+1)) < (int) leaves.size()){
-                    leaves.erase(leaves.begin() + (remover.split(",")[x].toInt() - (x+1)));
-                    leavesPCA.erase(leavesPCA.begin() + (remover.split(",")[x].toInt() - (x+1)));
-                    leavesPer.erase(leavesPer.begin() + (remover.split(",")[x].toInt() - (x+1)));
-                    leavesArea.erase(leavesArea.begin() + (remover.split(",")[x].toInt() - (x+1)));
+                if((removeLeaf.split(",")[x].toInt() - (x+1)) > -1 && (removeLeaf.split(",")[x].toInt() - (x+1)) < (int) leaves.size()){
+                    leaves.erase(leaves.begin() + (removeLeaf.split(",")[x].toInt() - (x+1)));
+                    leavesPCA.erase(leavesPCA.begin() + (removeLeaf.split(",")[x].toInt() - (x+1)));
+                    leavesPer.erase(leavesPer.begin() + (removeLeaf.split(",")[x].toInt() - (x+1)));
+                    leavesArea.erase(leavesArea.begin() + (removeLeaf.split(",")[x].toInt() - (x+1)));
                 }else{
                     QMessageBox::warning(this, tr("Alert"),tr("An invalid number has been entered!"));
                 }
@@ -1184,22 +1193,20 @@ void MainWindow::on_btnRemove_clicked(){
             }
         }
 
-
         image.release();
         image = imread(imagePath, IMREAD_COLOR );
         surfaceCalc();
 
         QImage imageaux= QImage((uchar*) image.data, image.cols, image.rows, image.step, QImage::Format_RGB888);
-        ui->exibirImagem->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
-        ui->exibirResult->setText(result);
-        ui->scrollResult->setWidget(ui->exibirResult);
-
+        ui->displayImage->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
+        ui->displayResult->setText(result);
+        ui->scrollResult->setWidget(ui->displayResult);
     }
 }
 
 void MainWindow::on_tabWidget_currentChanged(){
     QSqlQuery query,query2;
-    if(query.exec("select * from imagem order by id_Imagem desc")){
+    if(query.exec("select * from image order by id_Image desc")){
          QString aux = "";
          while(query.next()){
             aux += "\n" + query.value(0).toString() + "\n\n";
@@ -1210,21 +1217,21 @@ void MainWindow::on_tabWidget_currentChanged(){
             aux += "\nScale pattern area: " + query.value(5).toString();
             aux += "\nAverage width: " + query.value(6).toString();
             aux += "\nWidth deviation: " + query.value(7).toString();
-            aux += "\nAverage lenght: " + query.value(8).toString();
-            aux += "\nLenght deviation: " + query.value(9).toString();
+            aux += "\nAverage length: " + query.value(8).toString();
+            aux += "\nlength deviation: " + query.value(9).toString();
             aux += "\nAverage area: " + query.value(10).toString();
             aux += "\nArea deviation: " + query.value(11).toString();
             aux += "\nSum areas: " + query.value(12).toString();
             aux += "\nAverage perimeter: " + query.value(13).toString();
             aux += "\nPerimeter deviation: " + query.value(14).toString()+ "\n\n";
 
-            QString endImagem = query.value(0).toString();
+            QString pathImage = query.value(0).toString();
 
-            if(query2.exec("select * from folha where id_Imagem = '" +endImagem+"'")){
+            if(query2.exec("select * from leaf where id_Image = '" +pathImage+"'")){
                  while(query2.next()){
-                    aux += "Folha: " + query2.value(2).toString() + "\n\n";
+                    aux += "leaf: " + query2.value(2).toString() + "\n\n";
                     aux += "\nWidth: " + query2.value(3).toString();
-                    aux += "\nLenght: " + query2.value(4).toString();
+                    aux += "\nlength: " + query2.value(4).toString();
                     aux += "\nWidth/Length: " + query2.value(5).toString();
                     aux += "\nArea: " + query2.value(6).toString();
                     aux += "\nPerimeter: " + query2.value(7).toString()+ "\n\n";
@@ -1234,11 +1241,11 @@ void MainWindow::on_tabWidget_currentChanged(){
         }
 
         if(aux == ""){
-            ui->exibirHist->setText("The historic will come here.");
+            ui->displayHist->setText("The historic will come here.");
         }else{
-            ui->exibirHist->setText(aux);
+            ui->displayHist->setText(aux);
         }
-        ui->scrollHist->setWidget(ui->exibirHist);
+        ui->scrollHist->setWidget(ui->displayHist);
         ui->scrollHist->setAlignment(Qt::AlignHCenter);
     }
 }
@@ -1248,11 +1255,27 @@ void MainWindow::on_btnClearHistory_clicked(){
     reply = QMessageBox::question(this, "Clear history", "This operation will delete the entire historic. Are you sure?", QMessageBox::Yes|QMessageBox::No);
     if (reply == QMessageBox::Yes) {
         QSqlQuery query;
-        query.prepare("delete from folha");
+        query.prepare("delete from leaf");
         query.exec();
-        query.prepare("delete from imagem");
+        query.prepare("delete from image");
         query.exec();
 
-        ui->exibirHist->setText("The historic will come here.");
+        ui->displayHist->setText("The historic will come here.");
+    }
+}
+
+void MainWindow::on_btnImage_clicked()
+{
+    QFileDialog dialog(this);
+    dialog.setNameFilter(tr("Images(*.* *.png *.jpeg *.jpg)"));
+    dialog.setViewMode(QFileDialog::Detail);
+    QString fileName = QFileDialog::getOpenFileName(this,tr("Open Imagens"), "",tr("Image Files (*.* *.png *.jpeg *.jpg"));
+
+    if(!fileName.isEmpty()){
+        ui->pathImage->setText(fileName);
+        imagePath = ui->pathImage->text().toStdString();
+        image = imread(imagePath, IMREAD_COLOR );
+        QImage imageaux= QImage((uchar*) image.data, image.cols, image.rows, image.step, QImage::Format_RGB888);
+        ui->displayImage->setPixmap(QPixmap:: fromImage(imageaux).scaled((451*imageaux.width())/imageaux.height(),451));
     }
 }

@@ -24,8 +24,6 @@ public:
     ~MainWindow();
 
 private slots:
-    void on_btnImagem_clicked();
-
     void on_btnCalc_clicked();
 
     void on_btnExport_clicked();
@@ -37,6 +35,8 @@ private slots:
     void on_tabWidget_currentChanged();
 
     void on_btnClearHistory_clicked();
+
+    void on_btnImage_clicked();
 
 private:
     Ui::MainWindow *ui;

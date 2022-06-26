@@ -17,7 +17,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string/>
   </property>
   <property name="layoutDirection">
    <enum>Qt::RightToLeft</enum>
@@ -61,7 +61,7 @@
        <enum>Qt::Horizontal</enum>
       </property>
      </widget>
-     <widget class="QPushButton" name="btnImagem">
+     <widget class="QPushButton" name="btnImage">
       <property name="geometry">
        <rect>
         <x>400</x>
@@ -103,7 +103,7 @@
        <string>Result</string>
       </property>
      </widget>
-     <widget class="QLabel" name="exibirResult">
+     <widget class="QLabel" name="showResult">
       <property name="geometry">
        <rect>
         <x>880</x>
@@ -148,7 +148,7 @@
        </property>
       </widget>
      </widget>
-     <widget class="QLabel" name="exibirImagem">
+     <widget class="QLabel" name="showImage">
       <property name="enabled">
        <bool>true</bool>
       </property>
@@ -243,7 +243,7 @@
         <string/>
        </property>
       </widget>
-      <widget class="QLineEdit" name="esp">
+      <widget class="QLineEdit" name="spe">
        <property name="geometry">
         <rect>
          <x>90</x>
@@ -391,7 +391,7 @@
         <string>Width</string>
        </property>
       </widget>
-      <widget class="QLabel" name="endImagem">
+      <widget class="QLabel" name="pathImage">
        <property name="enabled">
         <bool>false</bool>
        </property>
@@ -432,7 +432,7 @@
         <string>Length</string>
        </property>
       </widget>
-      <widget class="QLineEdit" name="areaQuadrado">
+      <widget class="QLineEdit" name="areaSquare">
        <property name="geometry">
         <rect>
          <x>170</x>
@@ -461,7 +461,7 @@
         </rect>
        </property>
        <property name="text">
-        <string>Widht/Lenght</string>
+        <string>Width/Length</string>
        </property>
       </widget>
       <widget class="QLabel" name="label">
@@ -564,7 +564,7 @@
        </property>
       </widget>
      </widget>
-     <widget class="QLabel" name="exibirHist">
+     <widget class="QLabel" name="showHist">
       <property name="geometry">
        <rect>
         <x>330</x>
