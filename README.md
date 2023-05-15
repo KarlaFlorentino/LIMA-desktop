@@ -4,4 +4,4 @@ Desktop version of the proposed method. This work aims to develop a simple and l
 
 Computer vision · Image processing · Leaf phenotyping.
 
-The application installer is available at 'LIMA.zip'.
+Application installer is available at 'LIMA.zip'.
