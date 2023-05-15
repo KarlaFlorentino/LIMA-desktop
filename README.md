@@ -1,6 +1,5 @@
-# DimencionamentoFoliar
-Desenvolvimento de um software e aplicativo para aferição do dimensionamento da superfície foliar de especies cultivadas.
+# L.I.M.A. Leaf Image Measurement and Analysis
 
-É realizada uma binarização na imagem, seguida pela extração dos contornos. Após filtragem de contornos inválidos e detecção do padrão de escala, as dimensões das folhas são estimadas pela razão entre as medidas em pixels e em cm, considerando o padrão de escala. 
+Desktop version of the proposed method. This work aims to develop a simple and low-cost method capable of accurately measuring the leaf surface size of plant species with significant agricultural interest. Our method extract the information through images of leaves accompanied by a scale pattern whose real area is known, captured by a simple camera.
 
-Área foliar, Visão computacional, Processamento de imagens.
+Computer vision · Image processing · Leaf phenotyping.
